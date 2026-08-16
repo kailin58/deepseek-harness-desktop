@@ -102,8 +102,9 @@ config.json 新增 `harness.download` 段：
 > 按各架构上传到 `harness.download.tag` 对应的 Release，终端用户才能真正「对应安装」。
 
 ## API Key 原则（重申）
-- Key **只存本机用户目录**，由首次运行录入页写入。
-- 绝不进入安装包、绝不上传、绝不进仓库。
+- **安装时不要求填 Key**：NSIS 一键安装完即可，Key 在首次打开 App（使用时）才引导填写。
+- 首次启动会进入引导式上手页 `key.html`：图文三步教用户去 DeepSeek 开放平台（`https://platform.deepseek.com/api_keys`）创建并复制 API Key，再粘贴保存。Key 仅保存在本机用户目录。
+- Key **只存本机用户目录**，绝不进入安装包、绝不上传、绝不进仓库。
 - 开发机便利：若本机 `harnessDir/.env` 已配 Key，首次运行会自动迁移，免重复填写。
 
 ## 备注
