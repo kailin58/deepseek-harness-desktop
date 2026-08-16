@@ -73,9 +73,11 @@ function detectRuntimes() {
   return missing;
 }
 
+let cachedEnv = null;
 function detectEnv() {
+  if (cachedEnv) return cachedEnv;
   const node = detectNode();
-  return {
+  cachedEnv = {
     platform: normalizePlatform(),
     arch: normalizeArch(),
     ...node,
@@ -83,6 +85,7 @@ function detectEnv() {
     dshVersion: null, // 可选，预留
     missingRuntimes: detectRuntimes()
   };
+  return cachedEnv;
 }
 
 // ---------- 资产解析 ----------
@@ -101,28 +104,52 @@ function resolveAssetUrl(cfg, version, env) {
   return `https://github.com/${owner}/${repo}/releases/download/${tag}/${name}`;
 }
 
-// ---------- 下载（支持重定向） ----------
-function downloadFile(url, dest) {
+// ---------- 下载（支持重定向 + 超时） ----------
+function downloadFile(url, dest, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    let done = false;
+    let currentReq = null;
+
+    function fail(e) {
+      if (done) return;
+      done = true;
+      try { if (currentReq && !currentReq.destroyed) currentReq.destroy(); } catch (_) {}
+      reject(e);
+    }
+
+    const totalTimer = setTimeout(() => fail(new Error('下载超时')), timeoutMs);
+
     const doGet = (u, hops) => {
-      if (hops > 6) return reject(new Error('重定向次数过多'));
+      if (done) return;
+      if (hops > 6) return fail(new Error('重定向次数过多'));
       const mod = u.startsWith('https:') ? https : http;
-      mod
+      currentReq = mod
         .get(u, { headers: { 'User-Agent': 'deepseek-harness-desktop' } }, (res) => {
+          if (done) return res.resume();
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
             res.resume();
             return doGet(new URL(res.headers.location, u).href, hops + 1);
           }
           if (res.statusCode !== 200) {
             res.resume();
-            return reject(new Error(`下载失败：HTTP ${res.statusCode}`));
+            return fail(new Error(`下载失败：HTTP ${res.statusCode}`));
           }
           const f = fs.createWriteStream(dest);
           res.pipe(f);
-          f.on('finish', () => f.close(() => resolve(dest)));
-          f.on('error', (e) => reject(e));
+          f.on('finish', () => {
+            if (done) return;
+            done = true;
+            clearTimeout(totalTimer);
+            f.close(() => resolve(dest));
+          });
+          f.on('error', (e) => fail(e));
+          res.on('error', (e) => fail(e));
         })
-        .on('error', (e) => reject(e));
+        .on('error', (e) => fail(e));
+      currentReq.setTimeout(Math.max(3000, timeoutMs - (Date.now() - t0)), () => {
+        fail(new Error('下载连接超时'));
+      });
     };
     doGet(url, 0);
   });
@@ -168,7 +195,7 @@ function extractZip(zipPath, destDir) {
 }
 
 // ---------- 主入口 ----------
-async function ensureHarness(cfg, userDataDir) {
+async function ensureHarness(cfg, userDataDir, timeoutMs = 12000) {
   if (!cfg || !cfg.enabled) return null;
   const env = detectEnv();
   const version = cfg.version;
@@ -194,14 +221,14 @@ async function ensureHarness(cfg, userDataDir) {
     }
   }
 
-  // 2) 下载对应架构 + 固定版本的 harness
+  // 2) 下载对应架构 + 固定版本的 harness（短超时，避免无资产时长时间阻塞启动）
   const url = resolveAssetUrl(cfg, version, env);
   const tmpZip = path.join(userDataDir, 'harness-cache', `.dl-${cacheKey}.zip`);
   fs.mkdirSync(path.dirname(tmpZip), { recursive: true });
   console.log('[harness] 检测环境：', JSON.stringify(env));
-  console.log('[harness] 下载对应 harness：', url);
+  console.log('[harness] 下载对应 harness：', url, 'timeout=', timeoutMs);
   try {
-    await downloadFile(url, tmpZip);
+    await downloadFile(url, tmpZip, timeoutMs);
   } catch (e) {
     console.error('[harness] 下载失败，回退 bundled/system：', e.message);
     return null;

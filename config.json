@@ -12,7 +12,8 @@
       "version": "0.1.0",
       "tag": "harness-v0.1.0",
       "assetTemplate": "deepseek-harness-{version}-{platform}-{arch}.zip",
-      "assetBaseUrl": ""
+      "assetBaseUrl": "",
+      "timeoutMs": 12000
     }
   },
   "update": {

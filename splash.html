@@ -44,9 +44,14 @@
   </div>
   <script>
     if (location.hash === '#error') document.body.classList.add('error');
+    const tip = document.getElementById('tip');
+    if (window.harness && window.harness.onStatusText) {
+      window.harness.onStatusText((text) => { if (tip) tip.textContent = text; });
+    }
     const retry = document.getElementById('retry');
     if (retry) retry.onclick = async () => {
       document.body.classList.remove('error');
+      if (tip) tip.textContent = '正在重新启动本地服务…';
       const ok = await window.harness.restart();
       if (!ok) document.body.classList.add('error');
     };

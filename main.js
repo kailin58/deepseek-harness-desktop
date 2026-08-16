@@ -52,18 +52,24 @@ function makeSystem(dir) {
   };
 }
 
-async function resolveHarnessAsync() {
+async function resolveHarnessAsync(status = () => {}) {
   const hcfg = config.harness || {};
   const dl = hcfg.download;
   const userData = app.getPath('userData');
+
+  // 优先尝试下载对应架构的固定版本 harness；给网络请求加短超时，避免无资产时长时间阻塞
   if (dl && dl.enabled) {
+    status('正在识别环境并获取对应版本的 DeepSeek Harness…');
     try {
-      const dir = await ensureHarness(dl, userData);
+      const timeoutMs = Number(dl.timeoutMs) || 12000;
+      const dir = await ensureHarness(dl, userData, timeoutMs);
       if (dir) return makeDownloaded(dir);
     } catch (e) {
       console.error('[harness] 下载/安装失败，回退：', e.message);
     }
   }
+
+  status('正在使用内置 DeepSeek Harness…');
   const bundledDir = IS_PACKAGED ? path.join(process.resourcesPath, 'harness') : null;
   const mode = config.harnessMode || 'auto';
   const useBundled = (mode === 'bundled') || (mode === 'auto' && bundledDir && fs.existsSync(bundledDir));
@@ -130,11 +136,20 @@ function checkPort(port, host) {
   });
 }
 
-async function waitForServer(timeoutMs = 40000) {
+function isWritableDir(dir) {
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function waitForServer(timeoutMs = 25000) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeoutMs) {
     if (await checkPort(PORT, HOST)) return true;
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 250));
   }
   return false;
 }
@@ -142,13 +157,22 @@ async function waitForServer(timeoutMs = 40000) {
 // 首次运行：把内置 dsh-home 复制到用户可写目录（bundle 只读，profiles 需可写）
 function ensureDshHome() {
   if (!harness || !harness.bundled || !harness.dshHome || harness.downloaded) return;
-  if (fs.existsSync(harness.dshHome)) return;
   const src = path.join(harness.dir, 'dsh-home');
   if (!fs.existsSync(src)) {
     console.error('[dsh] 内置 dsh-home 缺失：', src);
     return;
   }
+
+  // 优化：如果 bundled dsh-home 本身可写，就直接用它，避免大目录整份拷贝
+  if (!fs.existsSync(harness.dshHome) && isWritableDir(src)) {
+    harness.dshHome = src;
+    console.log('[dsh] bundled dsh-home 可写，直接使用：', src);
+    return;
+  }
+
+  if (fs.existsSync(harness.dshHome)) return;
   fs.mkdirSync(path.dirname(harness.dshHome), { recursive: true });
+  updateSplash('正在初始化用户数据（首次运行）…');
   fs.cpSync(src, harness.dshHome, { recursive: true, dereference: true });
   console.log('[dsh] 已初始化 dsh-home ->', harness.dshHome);
 }
@@ -211,6 +235,12 @@ function dshUrl() {
   return `http://${HOST}:${PORT}`;
 }
 
+function updateSplash(text) {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('harness:status-text', text);
+  }
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1440,
@@ -232,12 +262,15 @@ function createWindow() {
   win.webContents.on('did-fail-load', (_e, code, desc) => {
     console.error('[web] did-fail-load', code, desc);
   });
+  // 启动页立刻可见，后台再准备 harness；避免用户长时间看黑屏
+  win.loadFile(path.join(__dirname, 'splash.html'));
 }
 
 // 连接 / 拉起 dsh 并加载 Web UI
 async function launchHarnessAndUi() {
   let up = await checkPort(PORT, HOST);
   if (!up && AUTO_START) {
+    updateSplash('正在启动本地服务…');
     startDsh();
     up = await waitForServer();
   }
@@ -252,20 +285,31 @@ async function launchHarnessAndUi() {
     );
     return;
   }
+  updateSplash('正在连接 Web UI…');
   if (win) win.loadURL(dshUrl());
 }
 
 async function bootstrap() {
   createWindow();
-  harness = await resolveHarnessAsync();
-  ensureDshHome();
-  if (!ensureKey()) {
-    // 首次运行：展示 Key 录入页，待用户保存后再继续
-    keyPending = true;
-    if (win) win.loadFile(path.join(__dirname, 'key.html'));
-    return;
+  try {
+    harness = await resolveHarnessAsync(updateSplash);
+    updateSplash('正在准备 DeepSeek Harness…');
+    ensureDshHome();
+    if (!ensureKey()) {
+      // 首次运行：展示 Key 录入页，待用户保存后再继续
+      keyPending = true;
+      if (win) win.loadFile(path.join(__dirname, 'key.html'));
+      return;
+    }
+    await launchHarnessAndUi();
+  } catch (e) {
+    console.error('[bootstrap] 启动失败：', e);
+    updateSplash('启动失败');
+    if (win && !win.isDestroyed()) {
+      win.loadFile(path.join(__dirname, 'splash.html'), { hash: 'error' });
+    }
+    dialog.showErrorBox('启动失败', e.message || String(e));
   }
-  await launchHarnessAndUi();
 }
 
 // 用户保存 Key 后继续启动
