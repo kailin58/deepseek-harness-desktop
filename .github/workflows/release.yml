@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # bundle 需要本机 dsh 环境（含 node_modules 与 ~/.dsh）。
+      # CI 中若不可用，维护者需先在仓库 Variables 设置 DSH_SRC / DSH_HOME_SRC / NODE_SRC
+      # 指向 runner 上可用的 dsh 环境；否则跳过（前提：build-resources/harness 已就位）。
+      - name: Bundle harness (optional)
+        env:
+          DSH_SRC: ${{ vars.DSH_SRC }}
+          DSH_HOME_SRC: ${{ vars.DSH_HOME_SRC }}
+          NODE_SRC: ${{ vars.NODE_SRC }}
+        run: |
+          if ($env:DSH_SRC) { npm run bundle } else { Write-Host "DSH_SRC 未设置，跳过 bundle（请确保 build-resources/harness 已存在）" }
+
+      # 把占位符 owner 替换为当前仓库 owner，发布到正确的 GitHub Releases
+      - name: Set GitHub owner
+        run: |
+          (Get-Content package.json) -replace 'REPLACE_WITH_GITHUB_OWNER','${{ github.repository_owner }}' | Set-Content package.json
+          (Get-Content config.json) -replace 'REPLACE_WITH_GITHUB_OWNER','${{ github.repository_owner }}' | Set-Content config.json
+
+      - name: Build & publish installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist -- --publish always

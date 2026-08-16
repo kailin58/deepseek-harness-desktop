@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+  <title>设置 DeepSeek API Key</title>
+  <style>
+    :root { --bg:#0b0e14; --fg:#e6e9ef; --muted:#8b93a7; --accent:#4d6bfe; --ok:#3ecf8e; --err:#ff7a7a; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: radial-gradient(1200px 600px at 50% -10%, #16203a 0%, var(--bg) 60%);
+      color: var(--fg);
+      font-family: -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      padding: 24px;
+    }
+    .logo { font-size: 24px; font-weight: 700; letter-spacing: .5px; }
+    .logo span { color: var(--accent); }
+    h2 { font-size: 17px; font-weight: 600; margin: 4px 0 0; }
+    .sub { color: var(--muted); font-size: 13px; max-width: 460px; text-align: center; line-height: 1.6; }
+    .field { width: 460px; max-width: 92vw; display: flex; flex-direction: column; gap: 8px; }
+    label { font-size: 13px; color: var(--muted); }
+    input {
+      width: 100%; padding: 11px 13px; border-radius: 9px;
+      border: 1px solid #2a3146; background: #11151f; color: var(--fg);
+      font-size: 14px; font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      padding: 11px 22px; border: none; border-radius: 9px;
+      background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: .55; cursor: default; }
+    .status { font-size: 13px; min-height: 18px; text-align: center; }
+    .status.err { color: var(--err); }
+    .status.ok { color: var(--ok); }
+    .ver { position: fixed; bottom: 14px; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="logo">DeepSeek <span>Harness</span> · 桌面版</div>
+  <h2>首次运行 · 配置 API Key</h2>
+  <div class="sub">Key 仅保存在本机用户目录（AppData），不会随安装包分发，也不会上传。</div>
+  <div class="field">
+    <label for="key">DeepSeek API Key</label>
+    <input id="key" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+    <button id="save">保存并启动</button>
+    <div class="status" id="status"></div>
+  </div>
+  <div class="ver" id="ver"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const status = $('status');
+    const saveBtn = $('save');
+
+    window.harness.getVersion().then((v) => { $('ver').textContent = 'v' + v; }).catch(() => {});
+
+    function setStatus(msg, kind) {
+      status.textContent = msg;
+      status.className = 'status' + (kind ? ' ' + kind : '');
+    }
+
+    saveBtn.onclick = async () => {
+      const key = $('key').value.trim();
+      if (!key) { setStatus('请输入 Key', 'err'); return; }
+      if (!key.startsWith('sk-') || key.length < 20) {
+        setStatus('Key 格式不正确（应以 sk- 开头且长度足够）', 'err');
+        return;
+      }
+      saveBtn.disabled = true;
+      setStatus('正在保存并启动本地服务 …');
+      try {
+        const res = await window.harness.saveKey(key);
+        if (res && res.ok) {
+          setStatus('已保存，正在加载 Web UI …', 'ok');
+          // 主进程会在保存后自动加载 UI；此处不重复跳转
+        } else {
+          setStatus(res && res.error ? res.error : '保存失败', 'err');
+          saveBtn.disabled = false;
+        }
+      } catch (e) {
+        setStatus('保存异常：' + e.message, 'err');
+        saveBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

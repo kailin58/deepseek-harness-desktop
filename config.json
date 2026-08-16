@@ -1,0 +1,15 @@
+{
+  "harnessMode": "auto",
+  "harnessDir": "C:\\Users\\kaili\\deepseek-harness",
+  "port": 3080,
+  "host": "127.0.0.1",
+  "autoStart": true,
+  "update": {
+    "provider": "github",
+    "owner": "REPLACE_WITH_GITHUB_OWNER",
+    "repo": "deepseek-harness-desktop",
+    "autoCheck": true,
+    "checkIntervalMinutes": 60
+  },
+  "_note": "harnessMode: auto=优先用内置 bundle（打包后），否则回退本机 dsh；bundled/system 可强制。update.owner 改为你的 GitHub 用户名/组织后即可启用自动监控与更新提醒。"
+}

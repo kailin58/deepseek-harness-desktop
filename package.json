@@ -1,0 +1,59 @@
+{
+  "name": "deepseek-harness-desktop",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 桌面外壳：Electron 壳 + 内置 dsh 本地服务，一键安装、自动监控 GitHub 更新",
+  "author": "WorkBuddy",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "bundle": "node bundle-harness.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.deepseek.harness.desktop",
+    "electronDist": "node_modules/electron/dist",
+    "productName": "DeepSeek Harness",
+    "copyright": "Copyright © 2026",
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash.html",
+      "key.html",
+      "config.json",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "DeepSeek Harness"
+    },
+    "extraResources": [
+      {
+        "from": "build-resources/harness",
+        "to": "harness"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "REPLACE_WITH_GITHUB_OWNER",
+        "repo": "deepseek-harness-desktop"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "30.5.1",
+    "electron-builder": "^24.13.3",
+    "electron-updater": "^6.8.9"
+  }
+}

@@ -1,0 +1,16 @@
+# 依赖（构建时通过 npm install / npm ci 还原，不入仓）
+node_modules/
+
+# 打包产物：体积巨大，且含开发者本机 ~/.dsh 个人数据，禁止入仓
+build-resources/
+
+# 安装包二进制：通过 GitHub Releases 分发，不入 git
+dist/
+
+# 缓存 / 日志
+.npmcache/
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
