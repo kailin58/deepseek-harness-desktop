@@ -1,6 +1,13 @@
 'use strict';
 
 const { app, BrowserWindow, dialog, ipcMain, Menu } = require('electron');
+
+// 默认禁用 GPU 硬件加速：避免 Windows 部分显卡驱动下 fixed/overlay 弹层被错误遮挡。
+// 需要 GPU 加速时可传 --enable-gpu 启动。
+if (typeof app.disableHardwareAcceleration === 'function' && !process.argv.includes('--enable-gpu')) {
+  app.disableHardwareAcceleration();
+}
+
 const { autoUpdater } = require('electron-updater');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -267,6 +274,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     backgroundColor: '#0b0e14',
+    paintWhenInitiallyHidden: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
