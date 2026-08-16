@@ -6,8 +6,8 @@
   "autoStart": true,
   "update": {
     "provider": "github",
-    "owner": "REPLACE_WITH_GITHUB_OWNER",
-    "repo": "deepseek-harness-desktop",
+    "owner": "kailin58",
+    "repo": "-deepseek-harness-desktop",
     "autoCheck": true,
     "checkIntervalMinutes": 60
   },
