@@ -82,7 +82,6 @@ const KEY_FILE = path.join(app.getPath('userData'), '.env');
 
 let win = null;
 let dshProc = null;
-let keyPending = false;
 
 function loadConfig() {
   try {
@@ -177,21 +176,16 @@ function ensureDshHome() {
   console.log('[dsh] 已初始化 dsh-home ->', harness.dshHome);
 }
 
-// 确保 Key 存在：优先复用本机已配好的 .env（开发机便利），否则需首次录入
-function ensureKey() {
-  if (fs.existsSync(KEY_FILE)) return true;
-  // 开发机便利：从原 harnessDir/.env 迁一份到用户目录，避免重复填写
-  const legacy = harness.bundled
-    ? null
-    : path.join(harness.dir, '.env');
+// 静默迁移：若本机已配 Key，迁到用户目录（开发机便利）。不阻塞启动。
+function migrateLegacyKey() {
+  if (fs.existsSync(KEY_FILE)) return;
+  const legacy = harness.bundled ? null : path.join(harness.dir, '.env');
   if (legacy && fs.existsSync(legacy)) {
     try {
       fs.copyFileSync(legacy, KEY_FILE);
       console.log('[key] 已从本机 dsh 迁移 Key 到', KEY_FILE);
-      return true;
     } catch (e) { /* ignore */ }
   }
-  return false;
 }
 
 function startDsh() {
@@ -241,6 +235,30 @@ function updateSplash(text) {
   }
 }
 
+// 打开 Key 引导页（随时可唤起，不阻塞 dsh 使用）
+function openKeyPage() {
+  if (win && !win.isDestroyed()) win.loadFile(path.join(__dirname, 'key.html'));
+}
+
+// 未配置 Key 时的非阻塞引导提示：进 dsh 后弹一次，不阻塞使用
+function promptForKey() {
+  const parent = win || null;
+  dialog
+    .showMessageBox(parent, {
+      type: 'info',
+      title: '尚未配置 API Key',
+      message: 'DeepSeek Harness 已启动，但还没有配置 API Key。\n需要调用 DeepSeek 模型时请先填写。',
+      detail: 'Key 仅保存在本机用户目录，不会上传，也不会写入安装包。',
+      buttons: ['现在填写', '稍后'],
+      defaultId: 0,
+      cancelId: 1
+    })
+    .then(({ response }) => {
+      if (response === 0) openKeyPage();
+    })
+    .catch(() => {});
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1440,
@@ -287,6 +305,8 @@ async function launchHarnessAndUi() {
   }
   updateSplash('正在连接 Web UI…');
   if (win) win.loadURL(dshUrl());
+  // 已进 dsh；若尚未配置 Key，给一次非阻塞引导（不阻塞使用）
+  if (!fs.existsSync(KEY_FILE)) promptForKey();
 }
 
 async function bootstrap() {
@@ -295,12 +315,7 @@ async function bootstrap() {
     harness = await resolveHarnessAsync(updateSplash);
     updateSplash('正在准备 DeepSeek Harness…');
     ensureDshHome();
-    if (!ensureKey()) {
-      // 首次运行：展示 Key 录入页，待用户保存后再继续
-      keyPending = true;
-      if (win) win.loadFile(path.join(__dirname, 'key.html'));
-      return;
-    }
+    migrateLegacyKey(); // 静默迁移本机 Key（不阻塞）
     await launchHarnessAndUi();
   } catch (e) {
     console.error('[bootstrap] 启动失败：', e);
@@ -312,11 +327,18 @@ async function bootstrap() {
   }
 }
 
-// 用户保存 Key 后继续启动
+// 用户保存/修改 Key 后：重启 dsh 以加载新环境变量，并切回 Web UI
 async function proceedAfterKey() {
-  keyPending = false;
   ensureDshHome();
-  await launchHarnessAndUi();
+  stopDsh();
+  await new Promise((r) => setTimeout(r, 300));
+  startDsh();
+  const ok = await waitForServer();
+  if (ok && win && !win.isDestroyed()) {
+    win.loadURL(dshUrl());
+  } else if (win && !win.isDestroyed()) {
+    win.loadFile(path.join(__dirname, 'splash.html'), { hash: 'error' });
+  }
 }
 
 // ---------- 自动更新：自动监控 GitHub Releases + 更新提醒 ----------
@@ -371,13 +393,14 @@ function setupUpdater() {
 function buildMenu() {
   const template = [
     {
-      label: '帮助',
+      label: '设置',
       submenu: [
+        { label: '填写 / 修改 API Key', click: () => openKeyPage() },
+        { type: 'separator' },
         {
           label: '检查更新',
           click: () => autoUpdater.checkForUpdates().catch((e) => console.error('[updater]', e.message))
         },
-        { type: 'separator' },
         { label: '关于', click: () => dialog.showMessageBox({ message: `DeepSeek Harness 桌面版 v${app.getVersion()}` }) },
         { role: 'toggleDevTools' },
         { type: 'separator' },
