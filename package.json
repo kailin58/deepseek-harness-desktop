@@ -6,7 +6,7 @@
   "main": "main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
+    "start": "D:/node.exe node_modules/electron/cli.js .",
     "bundle": "node bundle-harness.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win"
