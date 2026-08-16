@@ -4,6 +4,17 @@
   "port": 3080,
   "host": "127.0.0.1",
   "autoStart": true,
+  "harness": {
+    "download": {
+      "enabled": true,
+      "owner": "kailin58",
+      "repo": "deepseek-harness-desktop",
+      "version": "0.1.0",
+      "tag": "harness-v0.1.0",
+      "assetTemplate": "deepseek-harness-{version}-{platform}-{arch}.zip",
+      "assetBaseUrl": ""
+    }
+  },
   "update": {
     "provider": "github",
     "owner": "kailin58",

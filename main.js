@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const { ensureHarness } = require('./harness-manager');
 
 // ---------- config ----------
 const config = loadConfig();
@@ -15,24 +16,35 @@ const AUTO_START = config.autoStart !== false;
 const IS_PACKAGED = app.isPackaged;
 
 // ---------- harness resolution ----------
-// bundled 模式：安装包内置 <resources>/harness（node.exe + node_modules + dsh-home）
-// system  模式：复用本机已安装的 dsh（config.harnessDir）
-function resolveHarness() {
-  const bundledDir = IS_PACKAGED ? path.join(process.resourcesPath, 'harness') : null;
-  const mode = config.harnessMode || 'auto';
-  const useBundled = (mode === 'bundled') || (mode === 'auto' && bundledDir && fs.existsSync(bundledDir));
-  if (useBundled && bundledDir) {
-    return {
-      bundled: true,
-      dir: bundledDir,
-      nodeExe: path.join(bundledDir, 'node.exe'),
-      dshBin: path.join(bundledDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
-      dshHome: path.join(app.getPath('userData'), 'dsh-home')
-    };
-  }
-  const dir = config.harnessDir || 'C:\\Users\\kaili\\deepseek-harness';
+// 解析优先级：下载（对应架构 + 固定版本）> bundled（安装包内置）> system（本机 dsh）
+function makeBundled(bundledDir) {
+  return {
+    mode: 'bundled',
+    bundled: true,
+    dir: bundledDir,
+    nodeExe: path.join(bundledDir, 'node.exe'),
+    dshBin: path.join(bundledDir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+    dshHome: path.join(app.getPath('userData'), 'dsh-home')
+  };
+}
+
+function makeDownloaded(dir) {
   const isWin = process.platform === 'win32';
   return {
+    mode: 'downloaded',
+    bundled: true, // 复用 bundled 启动逻辑（自带 node 运行时 + node_modules）
+    downloaded: true,
+    dir,
+    nodeExe: path.join(dir, isWin ? 'node.exe' : 'node'),
+    dshBin: path.join(dir, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'),
+    dshHome: path.join(dir, 'dsh-home') // 缓存目录可写，无需复制
+  };
+}
+
+function makeSystem(dir) {
+  const isWin = process.platform === 'win32';
+  return {
+    mode: 'system',
     bundled: false,
     dir,
     dshBin: path.join(dir, 'node_modules', '.bin', isWin ? 'dsh.cmd' : 'dsh'),
@@ -40,7 +52,26 @@ function resolveHarness() {
   };
 }
 
-const harness = resolveHarness();
+async function resolveHarnessAsync() {
+  const hcfg = config.harness || {};
+  const dl = hcfg.download;
+  const userData = app.getPath('userData');
+  if (dl && dl.enabled) {
+    try {
+      const dir = await ensureHarness(dl, userData);
+      if (dir) return makeDownloaded(dir);
+    } catch (e) {
+      console.error('[harness] 下载/安装失败，回退：', e.message);
+    }
+  }
+  const bundledDir = IS_PACKAGED ? path.join(process.resourcesPath, 'harness') : null;
+  const mode = config.harnessMode || 'auto';
+  const useBundled = (mode === 'bundled') || (mode === 'auto' && bundledDir && fs.existsSync(bundledDir));
+  if (useBundled && bundledDir) return makeBundled(bundledDir);
+  return makeSystem(hcfg.harnessDir || 'C:\\Users\\kaili\\deepseek-harness');
+}
+
+let harness = null;
 const KEY_FILE = path.join(app.getPath('userData'), '.env');
 
 let win = null;
@@ -110,7 +141,7 @@ async function waitForServer(timeoutMs = 40000) {
 
 // 首次运行：把内置 dsh-home 复制到用户可写目录（bundle 只读，profiles 需可写）
 function ensureDshHome() {
-  if (!harness.bundled || !harness.dshHome) return;
+  if (!harness || !harness.bundled || !harness.dshHome || harness.downloaded) return;
   if (fs.existsSync(harness.dshHome)) return;
   const src = path.join(harness.dir, 'dsh-home');
   if (!fs.existsSync(src)) {
@@ -226,6 +257,7 @@ async function launchHarnessAndUi() {
 
 async function bootstrap() {
   createWindow();
+  harness = await resolveHarnessAsync();
   ensureDshHome();
   if (!ensureKey()) {
     // 首次运行：展示 Key 录入页，待用户保存后再继续

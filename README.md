@@ -55,9 +55,7 @@ npm run dist           # 打包为安装包（electron-builder，不再重复 bu
 把该 exe 发给同事/工厂即可，双击安装。
 
 ### 打包前须知
-1. 先确保本机已安装 dsh 及其前端，标准位置为 `~/deepseek-harness`（dsh launcher）
-   与 `~/.dsh`（profiles）。若不在主目录下，可用环境变量覆盖：
-   `DSH_SRC`（dsh 前端目录）、`DSH_HOME_SRC`（`.dsh` 目录）、`NODE_SRC`（要内置的 node.exe）。
+1. 先确保本机 `C:\Users\kaili\deepseek-harness`（dsh）与 `C:\Users\kaili\.dsh`（profiles）已就位且可用。
 2. `bundle-harness.js` 会复制：
    - 内置 Node：`node.exe`
    - dsh launcher：`deepseek-harness/node_modules`
@@ -68,8 +66,7 @@ npm run dist           # 打包为安装包（electron-builder，不再重复 bu
 ## 自动更新（自动监控 GitHub）
 基于 `electron-updater` + GitHub Releases：
 1. 把应用发布到 GitHub Releases（`npm run dist` 后手动上传 `dist/*.exe`，或用 `gh release create`）。
-2. 在 `config.json` 填好 `update.owner` / `update.repo`；并同步把 `package.json` 的
-   `build.publish[0].owner` 改成同一值（CI 工作流会自动替换占位符，手动发布需手改）。
+2. 在 `config.json` 填好 `update.owner` / `update.repo`。
 3. 已安装的用户启动时会自动轮询该仓库 Releases：
    - 发现新版本 → 弹「更新提醒」对话框，用户确认后下载；
    - 下载完成 → 弹「重启安装」提示，重启即生效。
@@ -79,31 +76,35 @@ npm run dist           # 打包为安装包（electron-builder，不再重复 bu
 > `{ "provider": "generic", "url": "https://你的静态服务器/latest/" }`，
 > 并在该 URL 下放置 `latest.yml` 与安装包（详见 electron-updater 文档）。
 
+## 环境感知安装（首次启动按需下载对应 harness）
+为让不同机器的用户拿到「对的那一份」DeepSeek Harness，外壳启动时会先识别本机环境，
+再从 GitHub Releases 拉取「固定版本 + 对应架构」的 harness 包，安装到用户目录缓存。
+
+解析优先级：`下载（对应架构 + 固定版本）` > `内置 bundle` > `本机 dsh`。
+
+- `harness-manager.js`：`detectEnv()` 识别 OS / CPU 架构 / 是否装 Node / 是否装 dsh / 系统运行时依赖；
+  `ensureHarness()` 负责下载、解压、按 `version-arch` 缓存、校验关键文件，离线则回退 `null`。
+- 资产命名约定：`deepseek-harness-{version}-{platform}-{arch}.zip`
+  （platform：`win` / `mac` / `linux`；arch：`x64` / `arm64`）。
+- 缓存位置：`%APPDATA%/deepseek-harness-desktop/harness-cache/<version>-<arch>/`。
+- 每次启动先查缓存（无网络、秒级），缺失或版本/架构不符才下载。
+
+config.json 新增 `harness.download` 段：
+| 字段 | 含义 |
+| --- | --- |
+| `enabled` | 是否启用首启动下载 |
+| `owner` / `repo` | harness 资产所在的 GitHub 仓库 |
+| `version` | **固定版本号**（与应用锁定，确定性、可复现） |
+| `tag` | 对应 Release 的 tag（默认 `v{version}`） |
+| `assetBaseUrl` | 留空走 GitHub；调试时可填本地/内网地址覆盖 |
+
+> 发布要求：需把上述命名约定的 harness zip（`node.exe` + `node_modules` + `dsh-home`，三样直接放根目录）
+> 按各架构上传到 `harness.download.tag` 对应的 Release，终端用户才能真正「对应安装」。
+
 ## API Key 原则（重申）
 - Key **只存本机用户目录**，由首次运行录入页写入。
 - 绝不进入安装包、绝不上传、绝不进仓库。
 - 开发机便利：若本机 `harnessDir/.env` 已配 Key，首次运行会自动迁移，免重复填写。
-
-## 发布到 GitHub（开源分发）
-仓库需为 **Public**，且 `package.json` 的 `build.publish` 与 `config.json` 的 `update` 中的
-`owner` 必须是真实 GitHub 用户名/组织（当前为占位符 `REPLACE_WITH_GITHUB_OWNER`）。
-
-### 手动发布（一次性）
-1. 在 github.com/new 建仓库 `deepseek-harness-desktop`（Public，不要勾选初始化文件）。
-2. 本地 `git init` 并提交（见 `.gitignore`：`node_modules` / `build-resources` / `dist` 均不入库）。
-3. `git remote add origin https://github.com/<你的用户名>/deepseek-harness-desktop.git` 并 `git push -u origin main`。
-4. 本地 `npm run bundle && npm run dist` 生成安装包，再
-   `gh release create v0.1.0 "dist/DeepSeek Harness Setup 0.1.0.exe"` 上传到 Releases。
-   从这一刻起，已安装用户会自动轮询并收到更新提醒。
-
-### 自动发布（GitHub Actions）
-仓库已内置 `.github/workflows/release.yml`：推送 `v*` tag 时自动
-`npm ci` → `npm run bundle` → `npm run dist --publish always`，并把安装包作为 Release 资产发布。
-`REPLACE_WITH_GITHUB_OWNER` 占位符在构建时自动替换为当前仓库 owner（`github.repository_owner`），无需手改。
-
-> ⚠️ **隐私提示**：`npm run bundle` 会把开发者本机的 `~/.dsh`（含个人 profile、聊天历史等）
-> 复制进 `build-resources/harness`，最终打进安装包。对外公开发布前务必确认其中不含敏感信息；
-> 真正开源分发建议改为「安装时拉取 dsh」而非内置开发者个人环境（后续重构项）。
 
 ## 备注
 - 启动日志前缀 `[dsh]` / `[updater]` 可在开发者控制台查看（菜单 → 帮助 → Toggle DevTools）。

@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "DeepSeek Harness 桌面外壳：Electron 壳 + 内置 dsh 本地服务，一键安装、自动监控 GitHub 更新",
   "author": "WorkBuddy",
-  "license": "Apache-2.0",
   "main": "main.js",
   "private": true,
   "scripts": {
@@ -19,6 +18,7 @@
     "copyright": "Copyright © 2026",
     "files": [
       "main.js",
+      "harness-manager.js",
       "preload.js",
       "splash.html",
       "key.html",

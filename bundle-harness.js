@@ -19,14 +19,11 @@
  *   - DEEPSEEK_API_KEY 等运行时注入，从不在 bundle 中落盘。
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const ROOT = __dirname;
-// 源路径可用环境变量覆盖，默认取「当前用户主目录」下的标准位置，
-// 让任意装了 dsh 的机器都能 `npm run bundle`（开源友好）。
-const SRC_DSH = process.env.DSH_SRC || path.join(os.homedir(), 'deepseek-harness');
-const SRC_HOME = process.env.DSH_HOME_SRC || path.join(os.homedir(), '.dsh');
+const SRC_DSH = process.env.DSH_SRC || 'C:/Users/kaili/deepseek-harness';
+const SRC_HOME = process.env.DSH_HOME_SRC || 'C:/Users/kaili/.dsh';
 const OUT = path.join(ROOT, 'build-resources', 'harness');
 
 // dsh-home 的「扁平回退目录」——全是本机 junction，不能打进分发包
